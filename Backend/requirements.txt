@@ -1,8 +1,14 @@
-Flask==2.3.2
-openpyxl==3.1.2
-requests==2.31.0
+Flask
+Flask-CORS
+openpyxl
+requests
+python-dotenv
+pyngrok
+inference-sdk
+Pillow
 
 # ML dependencies
 pandas
 numpy
 scikit-learn
+joblib
