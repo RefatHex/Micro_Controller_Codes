@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trash Detection System</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      /* Navigation Styles */
+      .nav-container {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 15px 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 20px;
+      }
+
+      .nav-menu {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+
+      .nav-item {
+        background: #667eea;
+        color: white;
+        text-decoration: none;
+        padding: 12px 25px;
+        border-radius: 8px;
+        transition: all 0.3s;
+        font-weight: 500;
+      }
+
+      .nav-item:hover {
+        background: #5568d3;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .nav-item.active {
+        background: #2ecc71;
+      }
+
+      .header {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 25px 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 30px;
+        text-align: center;
+      }
+
+      .header h1 {
+        color: #667eea;
+        font-size: 2.2em;
+        margin-bottom: 10px;
+      }
+
+      .header p {
+        color: #666;
+        font-size: 1.1em;
+      }
+
+      .upload-section {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 40px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        margin-bottom: 30px;
+      }
+
+      .upload-area {
+        border: 3px dashed #667eea;
+        border-radius: 15px;
+        padding: 60px 20px;
+        text-align: center;
+        background: #f8f9ff;
+        transition: all 0.3s;
+        cursor: pointer;
+      }
+
+      .upload-area:hover {
+        border-color: #5568d3;
+        background: #f0f2ff;
+      }
+
+      .upload-area.dragover {
+        border-color: #2ecc71;
+        background: #f0fff4;
+      }
+
+      .upload-icon {
+        font-size: 4em;
+        color: #667eea;
+        margin-bottom: 20px;
+      }
+
+      .upload-text {
+        font-size: 1.2em;
+        color: #666;
+        margin-bottom: 20px;
+      }
+
+      .file-input {
+        display: none;
+      }
+
+      .upload-btn {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1.1em;
+        transition: all 0.3s;
+        margin: 10px;
+      }
+
+      .upload-btn:hover {
+        background: #5568d3;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .analyze-btn {
+        background: #2ecc71;
+      }
+
+      .analyze-btn:hover {
+        background: #27ae60;
+      }
+
+      .analyze-btn:disabled {
+        background: #bdc3c7;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .preview-section {
+        display: none;
+        margin-top: 30px;
+        text-align: center;
+      }
+
+      .image-preview {
+        max-width: 100%;
+        max-height: 400px;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        margin-bottom: 20px;
+      }
+
+      .results-section {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        margin-bottom: 30px;
+        display: none;
+      }
+
+      .result-card {
+        background: #f8f9fa;
+        padding: 25px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        border-left: 5px solid;
+      }
+
+      .result-card.trash-detected {
+        border-color: #e74c3c;
+        background: #fdf2f2;
+      }
+
+      .result-card.no-trash {
+        border-color: #27ae60;
+        background: #f2f8f4;
+      }
+
+      .result-icon {
+        font-size: 2em;
+        margin-bottom: 10px;
+      }
+
+      .result-title {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+
+      .result-details {
+        font-size: 1.1em;
+        color: #666;
+      }
+
+      .location-info {
+        background: #e8f4fd;
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 20px;
+        border-left: 5px solid #3498db;
+      }
+
+      .loading {
+        display: none;
+        text-align: center;
+        padding: 40px;
+      }
+
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error-message {
+        background: #fadbd8;
+        color: #e74c3c;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 20px;
+        border-left: 5px solid #e74c3c;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 10px;
+        }
+
+        .header h1 {
+          font-size: 1.8em;
+        }
+
+        .upload-area {
+          padding: 40px 15px;
+        }
+
+        .upload-icon {
+          font-size: 3em;
+        }
+
+        .nav-menu {
+          gap: 10px;
+        }
+
+        .nav-item {
+          padding: 8px 15px;
+          font-size: 0.9em;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Navigation -->
+      <div class="nav-container">
+        <nav class="nav-menu">
+          <a href="index.html" class="nav-item">🏠 Dashboard</a>
+          <a href="trash-detection.html" class="nav-item active"
+            >📷 Trash Detection</a
+          >
+        </nav>
+      </div>
+
+      <!-- Header -->
+      <div class="header">
+        <h1>📷 AI Trash Detection System</h1>
+        <p>
+          Upload an image to detect and classify trash using advanced machine
+          learning
+        </p>
+      </div>
+
+      <!-- Upload Section -->
+      <div class="upload-section">
+        <div
+          class="upload-area"
+          id="uploadArea"
+          onclick="document.getElementById('fileInput').click()"
+        >
+          <div class="upload-icon">📸</div>
+          <div class="upload-text">
+            <strong>Click here to upload an image</strong><br />
+            or drag and drop a photo
+          </div>
+          <div>Supported formats: JPG, JPEG, PNG</div>
+        </div>
+
+        <input
+          type="file"
+          id="fileInput"
+          class="file-input"
+          accept="image/*"
+          onchange="handleFileSelect(event)"
+        />
+
+        <div class="preview-section" id="previewSection">
+          <img id="imagePreview" class="image-preview" alt="Image preview" />
+          <div>
+            <button
+              class="upload-btn analyze-btn"
+              id="analyzeBtn"
+              onclick="analyzeImage()"
+              disabled
+            >
+              🔍 Analyze Image
+            </button>
+            <button class="upload-btn" onclick="clearImage()">
+              🗑️ Clear Image
+            </button>
+          </div>
+        </div>
+
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <div>Analyzing image with AI...</div>
+        </div>
+      </div>
+
+      <!-- Results Section -->
+      <div class="results-section" id="resultsSection">
+        <h2>🎯 Detection Results</h2>
+        <div id="resultsContent">
+          <!-- Results will be populated here -->
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = "http://localhost:5001";
+      let selectedFile = null;
+
+      // File upload handling
+      function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+          selectedFile = file;
+          displayImagePreview(file);
+        }
+      }
+
+      function displayImagePreview(file) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const preview = document.getElementById("imagePreview");
+          preview.src = e.target.result;
+
+          const previewSection = document.getElementById("previewSection");
+          previewSection.style.display = "block";
+
+          const analyzeBtn = document.getElementById("analyzeBtn");
+          analyzeBtn.disabled = false;
+
+          // Hide results section when new image is loaded
+          document.getElementById("resultsSection").style.display = "none";
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function clearImage() {
+        selectedFile = null;
+        document.getElementById("previewSection").style.display = "none";
+        document.getElementById("resultsSection").style.display = "none";
+        document.getElementById("fileInput").value = "";
+      }
+
+      // Drag and drop functionality
+      const uploadArea = document.getElementById("uploadArea");
+
+      uploadArea.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadArea.classList.add("dragover");
+      });
+
+      uploadArea.addEventListener("dragleave", () => {
+        uploadArea.classList.remove("dragover");
+      });
+
+      uploadArea.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove("dragover");
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith("image/")) {
+          selectedFile = files[0];
+          displayImagePreview(files[0]);
+        }
+      });
+
+      // Analyze image function
+      async function analyzeImage() {
+        if (!selectedFile) {
+          alert("Please select an image first");
+          return;
+        }
+
+        const loading = document.getElementById("loading");
+        const analyzeBtn = document.getElementById("analyzeBtn");
+        const resultsSection = document.getElementById("resultsSection");
+
+        loading.style.display = "block";
+        analyzeBtn.disabled = true;
+        resultsSection.style.display = "none";
+
+        try {
+          const formData = new FormData();
+          formData.append("photo", selectedFile);
+
+          const response = await fetch(`${API_BASE}/check`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          if (result.error) {
+            throw new Error(result.error);
+          }
+
+          displayResults(result);
+        } catch (error) {
+          console.error("Error analyzing image:", error);
+          displayError("Failed to analyze image: " + error.message);
+        } finally {
+          loading.style.display = "none";
+          analyzeBtn.disabled = false;
+        }
+      }
+
+      function displayResults(result) {
+        const resultsContent = document.getElementById("resultsContent");
+        const resultsSection = document.getElementById("resultsSection");
+
+        const isTrashDetected = result.trash_detected;
+        const trashType = result.result || "unknown";
+        const location = result.location;
+
+        let resultsHTML = "";
+
+        // Main detection result
+        if (isTrashDetected) {
+          resultsHTML += `
+                    <div class="result-card trash-detected">
+                        <div class="result-icon">🚨</div>
+                        <div class="result-title">Trash Detected!</div>
+                        <div class="result-details">
+                            Type: <strong>${trashType}</strong><br>
+                            Status: <strong>Action Required</strong>
+                        </div>
+                    </div>
+                `;
+        } else {
+          resultsHTML += `
+                    <div class="result-card no-trash">
+                        <div class="result-icon">✅</div>
+                        <div class="result-title">No Trash Detected</div>
+                        <div class="result-details">
+                            The image appears to be clean with no visible trash.
+                        </div>
+                    </div>
+                `;
+        }
+
+        // Location information if available
+        if (location && (location.latitude || location.longitude)) {
+          resultsHTML += `
+                    <div class="location-info">
+                        <h3>📍 Location Information</h3>
+                        <p><strong>Latitude:</strong> ${
+                          location.latitude || "N/A"
+                        }</p>
+                        <p><strong>Longitude:</strong> ${
+                          location.longitude || "N/A"
+                        }</p>
+                        <p><strong>Info:</strong> ${
+                          location.info || "No additional info"
+                        }</p>
+                    </div>
+                `;
+        }
+
+        // Recommendations
+        if (isTrashDetected) {
+          resultsHTML += `
+                    <div class="location-info" style="border-color: #e74c3c; background: #fdf2f2;">
+                        <h3>💡 Recommendations</h3>
+                        <ul style="margin-top: 10px; padding-left: 20px;">
+                            <li>Clean up the detected ${trashType} immediately</li>
+                            <li>Check surrounding area for additional waste</li>
+                            <li>Report location if in public area</li>
+                            <li>Consider installing waste collection facilities nearby</li>
+                        </ul>
+                    </div>
+                `;
+        }
+
+        resultsContent.innerHTML = resultsHTML;
+        resultsSection.style.display = "block";
+      }
+
+      function displayError(message) {
+        const resultsContent = document.getElementById("resultsContent");
+        const resultsSection = document.getElementById("resultsSection");
+
+        resultsContent.innerHTML = `
+                <div class="error-message">
+                    <strong>❌ Error:</strong> ${message}
+                </div>
+            `;
+
+        resultsSection.style.display = "block";
+      }
+    </script>
+  </body>
+</html>

@@ -133,31 +133,146 @@ def load_or_create_excel(file_name):
         workbook.save(file_name)
     return workbook
 
-@app.route('/check', methods=['POST', 'OPTIONS'])
+@app.route('/check', methods=['POST', 'GET', 'OPTIONS'])
 def check():
     # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers.add('Access-Control-Allow-Origin', '*')
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Methods','GET, POST, OPTIONS')
         return response
     
+    print("\n" + "="*50)
+    print("Received request from ESP32")
+    print("="*50)
+    
     try:
+        # Log request details
+        print(f"Content-Type: {request.content_type}")
+        print(f"Content-Length: {request.content_length}")
+        print(f"Form data keys: {list(request.form.keys()) if request.form else 'None'}")
+        print(f"Files keys: {list(request.files.keys()) if request.files else 'None'}")
+        
         # Get WiFi data for location if available
         wifi_data = request.form.get('wifi_data', None) if request.form else None
         latitude, longitude, location_info = None, None, "No location data"
         
         if wifi_data:
+            print(f"WiFi data received: {len(wifi_data)} bytes")
             latitude, longitude, location_info = get_location_from_wifi(wifi_data)
             print(f"Location: {latitude}, {longitude} ({location_info})")
+        else:
+            print("No WiFi data provided")
         
-        # Check if raw JPEG data was uploaded
-        if request.content_type and ('application/octet-stream' in request.content_type or 'image/jpeg' in request.content_type):
+        # Handle multipart form data from ESP32
+        if 'photo' in request.files:
+            print("Processing multipart form data...")
+            
+            photo = request.files['photo']
+            if photo.filename == '':
+                return jsonify({'error': 'No photo selected'}), 400
+            
+            print(f"Photo filename: {photo.filename}")
+            print(f"Photo content type: {photo.content_type}")
+            
+            # Read the photo data
+            photo_data = photo.read()
+            print(f"Photo size: {len(photo_data)} bytes")
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            image_name = f"esp32_photo_{timestamp}.jpg"
+            saved_photo_path = os.path.join(PHOTOS_FOLDER, image_name)
+            
+            # Save uploaded file temporarily
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+            temp_file_path = temp_file.name
+            
+            try:
+                # Write photo data to temporary file
+                with open(temp_file_path, 'wb') as f:
+                    f.write(photo_data)
+                
+                # Save a copy to photos folder
+                with open(saved_photo_path, 'wb') as f:
+                    f.write(photo_data)
+                    
+                print(f"Photo saved: {saved_photo_path}")
+                
+                # Run inference
+                print("Running Roboflow inference...")
+                result = client.run_workflow(
+                    workspace_name="microshets",
+                    workflow_id="detect-and-classify-2",
+                    images={
+                        "image": temp_file_path
+                    },
+                    use_cache=True
+                )
+                
+                print(f"Inference result: {result}")
+                
+                # Extract trash detection results
+                trash_detected = False
+                trash_name = "none"
+                
+                if result and len(result) > 0:
+                    detection_predictions = result[0].get('detection_predictions', {})
+                    predictions = detection_predictions.get('predictions', [])
+                    
+                    if predictions and len(predictions) > 0:
+                        trash_detected = True
+                        trash_name = predictions[0].get('class', 'unknown')
+                        confidence = predictions[0].get('confidence', 0)
+                        print(f"Trash detected: {trash_name} (confidence: {confidence:.2f})")
+                    else:
+                        print("No trash detected in image")
+                else:
+                    print("No predictions returned from model")
+                
+                # Log to Excel
+                log_to_excel(image_name, latitude, longitude, location_info, 
+                           trash_detected, trash_name, datetime.now())
+                
+            finally:
+                # Clean up temporary file with error handling
+                try:
+                    if os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+                except PermissionError:
+                    pass  # File might still be in use, skip deletion
+            
+            # Return simplified results with CORS headers
+            response_data = {
+                'trash_detected': trash_detected,
+                'result': trash_name,
+                'location': {
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'info': location_info
+                },
+                'image_saved': image_name,
+                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            print(f"Sending response: {response_data}")
+            print("="*50 + "\n")
+            
+            response = jsonify(response_data)
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+        
+        # Check if raw JPEG data was uploaded (alternative method)
+        elif request.content_type and ('application/octet-stream' in request.content_type or 'image/jpeg' in request.content_type):
+            print("Processing raw JPEG data...")
+            
             # Handle direct JPEG data from ESP32
             jpeg_data = request.get_data()
             if len(jpeg_data) == 0:
                 return jsonify({'error': 'No data received'}), 400
+            
+            print(f"JPEG data size: {len(jpeg_data)} bytes")
             
             # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -179,6 +294,7 @@ def check():
                 print(f"Photo saved: {saved_photo_path}")
                 
                 # Run inference
+                print("Running Roboflow inference...")
                 result = client.run_workflow(
                     workspace_name="microshets",
                     workflow_id="detect-and-classify-2",
@@ -199,6 +315,7 @@ def check():
                     if predictions and len(predictions) > 0:
                         trash_detected = True
                         trash_name = predictions[0].get('class', 'unknown')
+                        print(f"Trash detected: {trash_name}")
                 
                 # Log to Excel
                 log_to_excel(image_name, latitude, longitude, location_info, 
@@ -213,7 +330,7 @@ def check():
                     pass  # File might still be in use, skip deletion
             
             # Return simplified results with CORS headers
-            response = jsonify({
+            response_data = {
                 'trash_detected': trash_detected,
                 'result': trash_name,
                 'location': {
@@ -221,93 +338,26 @@ def check():
                     'longitude': longitude,
                     'info': location_info
                 }
-            })
-            print(f"Trash detected: {trash_detected}, Result: {trash_name}")
-            response.headers.add('Access-Control-Allow-Origin', '*')
-            return response
+            }
             
-        # Handle multipart form data (for testing with Postman or ESP32)
-        elif 'photo' in request.files:
-            # Check if a file was uploaded
-            if 'photo' not in request.files:
-                return jsonify({'error': 'No photo uploaded'}), 400
+            print(f"Sending response: {response_data}")
+            print("="*50 + "\n")
             
-            photo = request.files['photo']
-            if photo.filename == '':
-                return jsonify({'error': 'No photo selected'}), 400
-            
-            # Generate timestamp for filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            image_name = f"uploaded_photo_{timestamp}.jpg"
-            saved_photo_path = os.path.join(PHOTOS_FOLDER, image_name)
-            
-            # Save uploaded file temporarily
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-            temp_file_path = temp_file.name
-            
-            try:
-                # Check if file is RGB565 format
-                if photo.filename.endswith('.rgb') or photo.content_type == 'application/octet-stream':
-                    # Handle RGB565 data from ESP32
-                    rgb565_data = photo.read()
-                    image = rgb565_to_jpeg(rgb565_data)
-                    image.save(temp_file_path, 'JPEG')
-                    image.save(saved_photo_path, 'JPEG')
-                else:
-                    # Handle regular image files
-                    photo.save(temp_file_path)
-                    photo.seek(0)  # Reset file pointer
-                    photo.save(saved_photo_path)
-                
-                print(f"Photo saved: {saved_photo_path}")
-                temp_file.close()  # Close file before using it
-                
-                # Run inference
-                result = client.run_workflow(
-                    workspace_name="microshets",
-                    workflow_id="detect-and-classify-2",
-                    images={
-                        "image": temp_file_path
-                    },
-                    use_cache=True
-                )
-                
-                # Extract trash detection results
-                trash_detected = False
-                trash_name = "none"
-                
-                if result and len(result) > 0:
-                    detection_predictions = result[0].get('detection_predictions', {})
-                    predictions = detection_predictions.get('predictions', [])
-                    
-                    if predictions and len(predictions) > 0:
-                        trash_detected = True
-                        trash_name = predictions[0].get('class', 'unknown')
-                
-                # Log to Excel
-                log_to_excel(image_name, latitude, longitude, location_info, 
-                           trash_detected, trash_name, datetime.now())
-                
-            finally:
-                # Clean up temporary file with error handling
-                try:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-                except PermissionError:
-                    pass  # File might still be in use, skip deletion
-            
-            # Return simplified results with CORS headers
-            response = jsonify({
-                'trash_detected': trash_detected,
-                'result': trash_name
-            })
+            response = jsonify(response_data)
             response.headers.add('Access-Control-Allow-Origin', '*')
             return response
         
         else:
-            return jsonify({'error': 'No photo uploaded'}), 400
+            print("ERROR: No photo data found in request")
+            print("="*50 + "\n")
+            return jsonify({'error': 'No photo uploaded. Please send photo as multipart/form-data with field name "photo"'}), 400
             
     except Exception as e:
+        print(f"ERROR: {str(e)}")
+        print("="*50 + "\n")
+        import traceback
+        traceback.print_exc()
+        
         error_response = jsonify({'error': str(e)})
         error_response.headers.add('Access-Control-Allow-Origin', '*')
         return error_response, 500
@@ -380,29 +430,19 @@ def predict_latest():
         return jsonify({"error": "No data available"}), 404
 
     latest_row = list(sheet.iter_rows(values_only=True))[-1]
-
-    # Build the features dict in the exact shape expected by ML.predict().
-    # Note: column indices come from how we append rows in /add_to_excel:
-    # [Timestamp, Ph_Value, Turbidity, Temperature, Flow_Value]
     features = {
-        # ML expects the following keys: temperature_C, pH, turbidity_NTU, flow_m_s, trash_detected
         'temperature_C': latest_row[3],
         'pH': latest_row[1],
         'turbidity_NTU': latest_row[2],
         'flow_m_s': latest_row[4],
-        # The spreadsheet currently doesn't include trash_detected, so we default to 0 (No).
         'trash_detected': 0
     }
 
-    # Call the ML.predict function imported from ML.py. This will use the
-    # pre-loaded artifacts (model, scaler, encoders) to produce decoded labels
-    # and numeric values for each output column.
     try:
         prediction = predict(features)
+        print(prediction)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-    # Return the prediction as JSON to the client
     return jsonify({"prediction": prediction}), 200
 
 @app.route('/get_database', methods=['GET'])
@@ -421,14 +461,43 @@ if __name__ == '__main__':
     # Start the Flask app on a specific port
     port = 5001
 
+    print("\n" + "="*60)
+    print("Starting Water Quality & Trash Detection Server")
+    print("="*60)
+    
     # Set your Ngrok auth token from environment
     ngrok_key = os.getenv("NGROK_AUTH_TOKEN")
-    ngrok.set_auth_token(ngrok_key)
-
-    # Open an Ngrok tunnel
-    public_url = ngrok.connect(port).public_url
-    print(f"Ngrok tunnel URL: {public_url}")
-    print("ESP32 can now communicate with this server through ngrok")
+    
+    if ngrok_key:
+        ngrok.set_auth_token(ngrok_key)
+        
+        # Open an Ngrok tunnel
+        public_url = ngrok.connect(port).public_url
+        print(f"\n✓ Ngrok tunnel active")
+        print(f"  Public URL: {public_url}")
+        print(f"  Local URL:  http://localhost:{port}")
+        print(f"\nESP32 Configuration:")
+        print(f"  const char* serverURL = \"{public_url}/check\";")
+    else:
+        print(f"\n✗ Ngrok not configured (no NGROK_AUTH_TOKEN in .env)")
+        print(f"  Server running locally only")
+        print(f"  Local URL: http://localhost:{port}")
+        print(f"\nFor local network access, use your PC's IP address:")
+        print(f"  Find your IP: ipconfig (Windows) or ifconfig (Linux/Mac)")
+        print(f"  Example ESP32 config: const char* serverURL = \"http://192.168.1.100:{port}/check\";")
+    
+    print("\n" + "="*60)
+    print("Available Endpoints:")
+    print("="*60)
+    print(f"  POST   /check              - Upload photo for trash detection")
+    print(f"  POST   /add_to_excel       - Add water quality data")
+    print(f"  GET    /get_entry          - Get latest water quality entry")
+    print(f"  GET    /predict_latest     - ML prediction on latest data")
+    print(f"  GET    /get_database       - Download Excel database")
+    print("="*60 + "\n")
+    
+    print("Server is ready to receive ESP32 images!")
+    print("Waiting for connections...\n")
 
     # Start the Flask server with external access
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
